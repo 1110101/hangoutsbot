@@ -82,7 +82,7 @@ class TelegramBot(telepot.async.Bot):
 
     @staticmethod
     def on_user_leave(bot, chat_id, msg):
-        print("{name} Left the gorup".format(name=msg['left_chat_member']['first_name']))
+        print("{name} left the group".format(name=msg['left_chat_member']['first_name']))
 
     @staticmethod
     def on_location_share(bot, chat_id, msg):
@@ -198,15 +198,14 @@ def tg_util_create_gmaps_url(lat, long, https=True):
 def tg_util_create_telegram_me_link(username, https=True):
     return "{https}://telegram.me/{username}".format(https='https' if https else 'http', username=username)
 
-
 def tg_util_sync_get_user_name(msg, chat_action='from'):
     username = TelegramBot.get_username(msg, chat_action=chat_action)
     url = tg_util_create_telegram_me_link(username)
     return msg[chat_action]['first_name'] if username == "" else "<a href='{url}' >{uname}</a>".format(url=url,
                                                                                                        uname=
-                                                                                                       msg[
-                                                                                                           chat_action][
+                                                                                                       msg[chat_action][
                                                                                                            'first_name'])
+
 
 
 @asyncio.coroutine
@@ -214,8 +213,7 @@ def tg_on_message(tg_bot, tg_chat_id, msg):
     tg2ho_dict = tg_bot.ho_bot.memory.get_by_path(['telesync'])['tg2ho']
 
     if str(tg_chat_id) in tg2ho_dict:
-        text = "<b>{uname}</b> <b>({gname})</b>: {text}".format(uname=tg_util_sync_get_user_name(msg),
-                                                                gname=tg_util_get_group_name(msg),
+        text = "<b>{uname}</b>: {text}".format(uname=tg_util_sync_get_user_name(msg),
                                                                 text=msg['text'])
 
         ho_conv_id = tg2ho_dict[str(tg_chat_id)]
@@ -587,9 +585,8 @@ def _on_hangouts_message(bot, event, command=""):
 
     if event.conv_id in ho2tg_dict:
         user_gplus = 'https://plus.google.com/u/0/{uid}/about'.format(uid=event.user_id.chat_id)
-        text = '<a href="{user_gplus}">{uname}</a> <b>({gname})</b>: {text}'.format(uname=event.user.full_name,
+        text = '<a href="{user_gplus}">{uname}</a>: {text}'.format(uname=event.user.full_name,
                                                                                     user_gplus=user_gplus,
-                                                                                    gname=event.conv.name,
                                                                                     text=sync_text)
         yield from tg_bot.sendMessage(ho2tg_dict[event.conv_id], text, parse_mode='html',
                                       disable_web_page_preview=True)
