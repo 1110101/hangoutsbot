@@ -13,6 +13,8 @@ from handlers import handler
 from commands import command
 import random
 
+import cgi
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,6 +38,9 @@ class TelegramBot(telepot.async.Bot):
             self.ho_bot = hangupsbot
         else:
             logger.info('telesync disabled in config.json')
+
+    def __del__(self):
+        logger.info('TelegramBot() destroyed')
 
     def add_command(self, cmd, func):
         self.commands[cmd] = func
@@ -82,7 +87,7 @@ class TelegramBot(telepot.async.Bot):
 
     @staticmethod
     def on_user_leave(bot, chat_id, msg):
-        print("{name} Left the gorup".format(name=msg['left_chat_member']['first_name']))
+        print("{name} left the group".format(name=msg['left_chat_member']['first_name']))
 
     @staticmethod
     def on_location_share(bot, chat_id, msg):
@@ -202,11 +207,17 @@ def tg_util_create_telegram_me_link(username, https=True):
 def tg_util_sync_get_user_name(msg, chat_action='from'):
     username = TelegramBot.get_username(msg, chat_action=chat_action)
     url = tg_util_create_telegram_me_link(username)
-    return msg[chat_action]['first_name'] if username == "" else "<a href='{url}' >{uname}</a>".format(url=url,
-                                                                                                       uname=
-                                                                                                       msg[
-                                                                                                           chat_action][
-                                                                                                           'first_name'])
+    if username == "":
+        if 'last_name' in msg[chat_action]:
+            return "{fname} {lname}".format(fname=msg[chat_action]['first_name'], lname=msg[chat_action]['last_name'])
+        else:
+            return msg[chat_action]['first_name']
+    else:
+        if 'last_name' in msg[chat_action]:
+            return "<a href='{url}' >{fname} {lname}</a>".format(url=url, fname=msg[chat_action]['first_name'],
+                                                                 lname=msg[chat_action]['last_name'])
+        else:
+            return "<a href='{url}' >{uname}</a>".format(url=url, uname= msg[chat_action]['first_name'])
 
 
 @asyncio.coroutine
@@ -214,9 +225,8 @@ def tg_on_message(tg_bot, tg_chat_id, msg):
     tg2ho_dict = tg_bot.ho_bot.memory.get_by_path(['telesync'])['tg2ho']
 
     if str(tg_chat_id) in tg2ho_dict:
-        text = "<b>{uname}</b> <b>({gname})</b>: {text}".format(uname=tg_util_sync_get_user_name(msg),
-                                                                gname=tg_util_get_group_name(msg),
-                                                                text=msg['text'])
+        text = "<b>{uname}</b>: {text}".format(uname=tg_util_sync_get_user_name(msg),
+                                               text=msg['text'])
 
         ho_conv_id = tg2ho_dict[str(tg_chat_id)]
         yield from tg_bot.ho_bot.coro_send_message(ho_conv_id, text)
@@ -469,8 +479,28 @@ def tg_command_tldr(bot, chat_id, args):
 
 # HANGOUTSBOT
 
+if 'tg_bot' in globals():
+    global tg_bot
+    if tg_bot is not None:
+        del tg_bot
+        tg_bot = None
+else:
+    tg_bot = None
+
 tg_bot = None
 
+if 'tg_task' in globals():
+    global tg_task
+    if tg_task is not None:
+        tg_task.cancel()
+        del tg_task
+        tg_task = None
+        logger.info('killing tg_task')
+else:
+    tg_task = None
+
+
+logger.info('initializing telesync')
 
 def _initialise(bot):
     if not bot.config.exists(['telesync']):
@@ -486,6 +516,8 @@ def _initialise(bot):
 
     if telesync_config['enabled']:
         global tg_bot
+        global tg_task
+    
         tg_bot = TelegramBot(bot)
         tg_bot.set_on_message_callback(tg_on_message)
         tg_bot.set_on_photo_callback(tg_on_photo)
@@ -501,7 +533,7 @@ def _initialise(bot):
         tg_bot.add_command("/tldr", tg_command_tldr)
 
         loop = asyncio.get_event_loop()
-        loop.create_task(tg_bot.message_loop())
+        tg_task = loop.create_task(tg_bot.message_loop())
 
 
 @command.register(admin=True)
@@ -587,10 +619,9 @@ def _on_hangouts_message(bot, event, command=""):
 
     if event.conv_id in ho2tg_dict:
         user_gplus = 'https://plus.google.com/u/0/{uid}/about'.format(uid=event.user_id.chat_id)
-        text = '<a href="{user_gplus}">{uname}</a> <b>({gname})</b>: {text}'.format(uname=event.user.full_name,
+        text = '<a href="{user_gplus}">{uname}</a>: {text}'.format(uname=event.user.full_name,
                                                                                     user_gplus=user_gplus,
-                                                                                    gname=event.conv.name,
-                                                                                    text=sync_text)
+                                                                                    text=cgi.escape(sync_text))
         yield from tg_bot.sendMessage(ho2tg_dict[event.conv_id], text, parse_mode='html',
                                       disable_web_page_preview=True)
         if has_photo:
